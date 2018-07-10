@@ -22,8 +22,8 @@ import com.haulmont.gradle.task.db.CubaHsqlStop
 import com.haulmont.gradle.utils.BOMVersions
 import com.moowork.gradle.node.NodeExtension
 import com.moowork.gradle.node.NodePlugin
+import groovy.io.FileType
 import groovy.util.slurpersupport.GPathResult
-import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
@@ -540,7 +540,6 @@ class CubaPlugin implements Plugin<Project> {
                     compileClasspath = compileClasspath + project.configurations.provided + project.configurations.jdbc
                 }
                 resources { srcDir 'src' }
-                output.dir("$project.buildDir/classes/java/main")
             }
             test {
                 java {
@@ -548,7 +547,6 @@ class CubaPlugin implements Plugin<Project> {
                     compileClasspath = compileClasspath + project.configurations.provided + project.configurations.jdbc
                 }
                 resources { srcDir 'test' }
-                output.dir("$project.buildDir/classes/java/test")
             }
         }
 
@@ -661,6 +659,11 @@ class CubaPlugin implements Plugin<Project> {
 
             project.eclipse.classpath {
                 plusConfigurations += [project.configurations.provided]
+                file.whenMerged { classpath ->
+                    classpath.entries.removeAll { entry ->
+                        entry.path.contains('build/classes/java/main')
+                    }
+                }
             }
 
             project.eclipse.project.file.withXml { provider ->
@@ -708,27 +711,31 @@ class CubaPlugin implements Plugin<Project> {
             if (!srcDir.toString().endsWith("src"))
                 continue
 
-            srcDir.eachFileRecurse { File file ->
-                if (file.name.endsWith('metadata.xml')) {
-                    try {
-                        String rootPackage = new XmlParser()
-                                .parse(file)
-                                .'metadata-model'[0]
-                                .@'root-package'
+            File metadataXml = null
+            srcDir.eachFileRecurse(FileType.FILES, {
+                if (it.name.endsWith('metadata.xml'))
+                    metadataXml = it
+            })
+            if (!metadataXml)
+                continue
 
-                        def rootPackagePath = rootPackage.replace('.', '/')
-                        def rootPackageDir = new File(srcDir, rootPackagePath)
+            try {
+                String rootPackage = new XmlParser()
+                        .parse(metadataXml)
+                        .'metadata-model'[0]
+                        .@'root-package'
 
-                        ['core/entity/', 'entity/'].each { String subDir ->
-                            def path = "$rootPackageDir/$subDir"
-                            if (new File(path).exists()) {
-                                entitiesDir = "$rootPackagePath/$subDir"
-                            }
-                        }
-                    } catch (Exception ignored) {
-                        throw new GradleException("$file.name parsing error")
+                def rootPackagePath = rootPackage.replace('.', '/')
+                def rootPackageDir = new File(srcDir, rootPackagePath)
+
+                ['core/entity/', 'entity/'].find {
+                    def path = "$rootPackageDir/$it"
+                    if (new File(path).exists()) {
+                        entitiesDir = "$rootPackagePath/$it"
+                        return true
                     }
                 }
+            } catch (Exception ignored) {
             }
         }
         return entitiesDir
