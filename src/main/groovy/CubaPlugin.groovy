@@ -540,6 +540,7 @@ class CubaPlugin implements Plugin<Project> {
                     compileClasspath = compileClasspath + project.configurations.provided + project.configurations.jdbc
                 }
                 resources { srcDir 'src' }
+                output.dir("$project.buildDir/classes/java/main")
             }
             test {
                 java {
@@ -547,6 +548,7 @@ class CubaPlugin implements Plugin<Project> {
                     compileClasspath = compileClasspath + project.configurations.provided + project.configurations.jdbc
                 }
                 resources { srcDir 'test' }
+                output.dir("$project.buildDir/classes/java/test")
             }
         }
 
@@ -661,7 +663,8 @@ class CubaPlugin implements Plugin<Project> {
                 plusConfigurations += [project.configurations.provided]
                 file.whenMerged { classpath ->
                     classpath.entries.removeAll { entry ->
-                        entry.path.contains('build/classes/java/main')
+                        entry.path.contains('build/classes/java/main') ||
+                        entry.path.contains('build/classes/java/test')
                     }
                 }
             }
