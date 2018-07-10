@@ -23,6 +23,7 @@ import com.haulmont.gradle.utils.BOMVersions
 import com.moowork.gradle.node.NodeExtension
 import com.moowork.gradle.node.NodePlugin
 import groovy.util.slurpersupport.GPathResult
+import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
@@ -31,7 +32,6 @@ import org.gradle.api.artifacts.ResolvedDependency
 import org.gradle.api.plugins.BasePlugin
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.tasks.Exec
-import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.bundling.Zip
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.javadoc.Javadoc
@@ -636,7 +636,13 @@ class CubaPlugin implements Plugin<Project> {
                         enhNode = new Node(rootNode, 'orderEntry', [type: 'module-library', scope: 'RUNTIME'])
                         Node libraryNode = new Node(enhNode, 'library')
                         Node classesNode = new Node(libraryNode, 'CLASSES')
-                        new Node(classesNode, 'root', ['url': 'file://$MODULE_DIR$/build/classes/java/' + dir])
+
+                        def entityClassesDir = getEntityClassesDir(project) ?: ''
+                        if ('' == entityClassesDir) {
+                            project.logger.info('Unable to find entities directory. Some source code changes can be not applied')
+                        }
+
+                        new Node(classesNode, 'root', ['url': 'file://$MODULE_DIR$/build/classes/java/' + "$dir/$entityClassesDir"])
                         new Node(libraryNode, 'JAVADOC')
                         new Node(libraryNode, 'SOURCES')
                     }
@@ -693,6 +699,39 @@ class CubaPlugin implements Plugin<Project> {
                 }
             }
         }
+    }
+
+    private String getEntityClassesDir(Project project) {
+        def entitiesDir = null
+
+        for (File srcDir : project.sourceSets.main.java.srcDirs) {
+            if (!srcDir.toString().endsWith("src"))
+                continue
+
+            srcDir.eachFileRecurse { File file ->
+                if (file.name.endsWith('metadata.xml')) {
+                    try {
+                        String rootPackage = new XmlParser()
+                                .parse(file)
+                                .'metadata-model'[0]
+                                .@'root-package'
+
+                        def rootPackagePath = rootPackage.replace('.', '/')
+                        def rootPackageDir = new File(srcDir, rootPackagePath)
+
+                        ['core/entity/', 'entity/'].each { String subDir ->
+                            def path = "$rootPackageDir/$subDir"
+                            if (new File(path).exists()) {
+                                entitiesDir = "$rootPackagePath/$subDir"
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        throw new GradleException("$file.name parsing error")
+                    }
+                }
+            }
+        }
+        return entitiesDir
     }
 
     private void setJavaeeCdiNoScan(Project project) {
@@ -966,12 +1005,6 @@ class CubaPlugin implements Plugin<Project> {
                 addJarNamesFromModule(jarNames, xml, depModule)
             }
         }
-    }
-
-    private static File getEntityClassesDir(Project project) {
-        SourceSet mainSourceSet = project.sourceSets.main
-
-        return mainSourceSet.java.outputDir
     }
 
     private static class AppComponent {
