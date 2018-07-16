@@ -22,7 +22,6 @@ import com.haulmont.gradle.task.db.CubaHsqlStop
 import com.haulmont.gradle.utils.BOMVersions
 import com.moowork.gradle.node.NodeExtension
 import com.moowork.gradle.node.NodePlugin
-import groovy.io.FileType
 import groovy.util.slurpersupport.GPathResult
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -637,7 +636,7 @@ class CubaPlugin implements Plugin<Project> {
                         Node libraryNode = new Node(enhNode, 'library')
                         Node classesNode = new Node(libraryNode, 'CLASSES')
 
-                        def entityClassesDir = getEntityClassesDir(project) ?: ''
+                        def entityClassesDir = getEntityClassesDir(project, dir) ?: ''
                         if ('' == entityClassesDir) {
                             project.logger.info('Unable to find entities directory. Some source code changes can be not applied')
                         }
@@ -707,20 +706,22 @@ class CubaPlugin implements Plugin<Project> {
         }
     }
 
-    private String getEntityClassesDir(Project project) {
+    private String getEntityClassesDir(Project project, String dir) {
         def entitiesDir = null
 
-        for (File srcDir : project.sourceSets.main.java.srcDirs) {
-            if (!srcDir.toString().endsWith("src"))
-                continue
+        def srcDirName = 'main' == dir ? 'src' : 'test'
+        def srcDirs = 'main' == dir ? project.sourceSets.main.java.srcDirs
+                : project.sourceSets.test.java.srcDirs
 
-            File metadataXml = null
-            srcDir.eachFileRecurse(FileType.FILES, {
-                if (it.name.endsWith('metadata.xml'))
-                    metadataXml = it
-            })
-            if (!metadataXml)
+        for (File srcDir : srcDirs) {
+            if (!srcDir.toString().endsWith(srcDirName)) {
                 continue
+            }
+
+            def metadataXml = findMetadataXml(srcDir)
+            if (!metadataXml) {
+                continue
+            }
 
             try {
                 String rootPackage = new XmlParser()
@@ -742,6 +743,27 @@ class CubaPlugin implements Plugin<Project> {
             }
         }
         return entitiesDir
+    }
+
+    private File findMetadataXml(File parentDir) {
+        def dirs = []
+
+        for (File f : parentDir.listFiles()) {
+            if (f.isFile() && f.getName().endsWith('metadata.xml')) {
+                return f
+            } else {
+                dirs.add(f)
+            }
+        }
+
+        for (File d : dirs) {
+            def metadataXml = findMetadataXml(d)
+            if (metadataXml) {
+                return metadataXml
+            }
+        }
+
+        return null
     }
 
     private void setJavaeeCdiNoScan(Project project) {
